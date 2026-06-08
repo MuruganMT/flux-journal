@@ -294,6 +294,7 @@ fetch(GAS_URL, {
 
 function loadAll(){
   showLoader('LOADING DATA...');
+  setTimeout(function(){ hideLoader(); }, 5000);
   api('getTrades', null, function(r){
     trades=r.data||[];
     api('getEntries', null, function(r2){
