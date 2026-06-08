@@ -325,75 +325,72 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
 <div class="toast" id="toast"></div>
 
 <script>
-// -- CONFIG ----------------------------------
+// ===== CONFIG =====
 var GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=";
 
-// -- STATE -----------------------------------
-var trades    = JSON.parse(localStorage.getItem("fx_trades")  || "[]");
-var entries   = JSON.parse(localStorage.getItem("fx_entries") || "[]");
-var shots     = [];
-var curType   = "PLAN";
-var tfilt     = "all";
-var lfilt     = "all";
-var recog     = null;
-var isRec     = false;
-var liveText  = "";
-var waveTimer = null;
+// ===== STATE =====
+var trades     = JSON.parse(localStorage.getItem("fx_trades")  || "[]");
+var entries    = JSON.parse(localStorage.getItem("fx_entries") || "[]");
+var shots      = [];
+var curType    = "PLAN";
+var tfilt      = "all";
+var lfilt      = "all";
+var recog      = null;
+var isRec      = false;
+var liveText   = "";
+var waveTimer  = null;
 var lastParsed = null;
 
-// -- BOOT ------------------------------------
+// ===== BOOT =====
 window.addEventListener("load", function() {
-  // Generate waveform bars
   var wv = document.getElementById("wv");
   for (var i = 0; i < 22; i++) {
     var b = document.createElement("div");
     b.className = "wbar";
     wv.appendChild(b);
   }
-  // Check for saved API key
+  var keyInput = document.getElementById("keyInput");
+  if (keyInput) {
+    keyInput.addEventListener("keydown", function(e) { if (e.key === "Enter") saveKey(); });
+  }
   var key = localStorage.getItem("fx_gemini_key");
   if (key) {
     document.getElementById("setup").style.display = "none";
     document.getElementById("mainApp").style.display = "block";
-    popLinker();
-    updHdr();
-    renderAnalytics();
+    boot();
   }
 });
 
-// -- SETUP -----------------------------------
+function boot() {
+  try { popLinker(); } catch(e) { console.error(e); }
+  try { updHdr(); } catch(e) { console.error(e); }
+  try { renderAnalytics(); } catch(e) { console.error(e); }
+}
+
+// ===== SETUP =====
 function saveKey() {
   var key = document.getElementById("keyInput").value.trim();
   var err = document.getElementById("keyErr");
-  if (!key) {
-    err.textContent = "Please enter your Gemini API key";
-    err.style.display = "block";
-    return;
-  }
+  if (!key) { err.textContent = "Please enter your Gemini API key"; err.style.display = "block"; return; }
   err.style.display = "none";
   localStorage.setItem("fx_gemini_key", key);
   document.getElementById("setup").style.display = "none";
   document.getElementById("mainApp").style.display = "block";
-  try { popLinker(); } catch(e) {}
-  try { updHdr(); } catch(e) {}
-  try { renderAnalytics(); } catch(e) {}
+  boot();
 }
 
-// Allow pressing Enter in key input
-document.getElementById("keyInput").addEventListener("keydown", function(e) {
-  if (e.key === "Enter") saveKey();
-});
-
-// -- SAVE ------------------------------------
+// ===== SAVE =====
 function sv() {
   localStorage.setItem("fx_trades",  JSON.stringify(trades));
   localStorage.setItem("fx_entries", JSON.stringify(entries));
 }
 
-// -- TABS ------------------------------------
+// ===== TABS =====
 function swTab(t, el) {
-  document.querySelectorAll(".panel").forEach(function(p) { p.classList.remove("active"); });
-  document.querySelectorAll(".ntab").forEach(function(n)  { n.classList.remove("active"); });
+  var panels = document.querySelectorAll(".panel");
+  for (var i = 0; i < panels.length; i++) panels[i].classList.remove("active");
+  var tabs = document.querySelectorAll(".ntab");
+  for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove("active");
   document.getElementById("panel-" + t).classList.add("active");
   el.classList.add("active");
   if (t === "trades")    renderTrades();
@@ -401,12 +398,13 @@ function swTab(t, el) {
   if (t === "analytics") renderAnalytics();
 }
 
-// -- TYPE ------------------------------------
+// ===== TYPE =====
 function pickType(btn, t) {
-  document.querySelectorAll(".tbtn").forEach(function(b) {
-    b.className = b.className.replace(" sel", "").replace(" esel", "");
-  });
-  var isExit = t === "PARTIAL_EXIT" || t === "FINAL_EXIT";
+  var btns = document.querySelectorAll(".tbtn");
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].className = btns[i].className.replace(" sel", "").replace(" esel", "");
+  }
+  var isExit = (t === "PARTIAL_EXIT" || t === "FINAL_EXIT");
   btn.className += isExit ? " esel" : " sel";
   curType = t;
   var sb = document.getElementById("sbtn");
@@ -414,24 +412,24 @@ function pickType(btn, t) {
   sb.querySelector(".btxt").textContent = isExit ? "LOG EXIT" : "ANALYZE & SAVE";
 }
 
-// -- LINKER ----------------------------------
+// ===== LINKER =====
 function popLinker() {
-  var sel  = document.getElementById("tlink");
-  var act  = trades.filter(function(t) { return t.status !== "CLOSED"; });
-  sel.innerHTML = "<option value="">-- New / Standalone --</option>" +
-    act.map(function(t) {
-      return "<option value="" + t.id + "">" + (t.pair || "?") + " " + (t.direction || "") + " -- " + t.status + "</option>";
-    }).join("");
+  var sel = document.getElementById("tlink");
+  var html = "<option value=''>-- New / Standalone --</option>";
+  for (var i = 0; i < trades.length; i++) {
+    var t = trades[i];
+    if (t.status === "CLOSED") continue;
+    html += "<option value='" + t.id + "'>" + (t.pair || "?") + " " + (t.direction || "") + " -- " + t.status + "</option>";
+  }
+  sel.innerHTML = html;
 }
 
-// -- RECORDING -------------------------------
-function togRec() {
-  if (isRec) { stopRec(); } else { startRec(); }
-}
+// ===== RECORDING =====
+function togRec() { if (isRec) stopRec(); else startRec(); }
 
 function startRec() {
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { toast("Use Chrome for voice recording", true); return; }
+  if (!SR) { toast("Use Chrome or Edge for voice recording", true); return; }
   liveText = "";
   document.getElementById("tbox").value = "";
   document.getElementById("excard").classList.remove("show");
@@ -457,11 +455,11 @@ function startRec() {
     document.getElementById("tbox").value = liveText + (itr ? " " + itr : "");
   };
   recog.onerror = function(e) {
-    toast("Mic error: " + e.error + ". Check mic permissions for this site.", true);
+    toast("Mic error: " + e.error + " - allow mic access for this site", true);
     stopRecClean();
   };
-  recog.onend = function() { if (isRec) { try { recog.start(); } catch(e) {} } };
-  try { recog.start(); } catch(e) { toast("Could not start: " + e.message, true); }
+  recog.onend = function() { if (isRec) { try { recog.start(); } catch(err) {} } };
+  try { recog.start(); } catch(e) { toast("Could not start mic: " + e.message, true); }
 }
 
 function stopRec() {
@@ -481,71 +479,74 @@ function stopRecClean() {
   if (waveTimer) clearTimeout(waveTimer);
   document.getElementById("rbtn").classList.remove("rec");
   document.getElementById("wv").classList.remove("on");
-  document.querySelectorAll(".wbar").forEach(function(b) { b.style.height = "4px"; });
+  var bars = document.querySelectorAll(".wbar");
+  for (var i = 0; i < bars.length; i++) bars[i].style.height = "4px";
 }
 
 function animWave() {
   if (!isRec) return;
-  document.querySelectorAll(".wbar").forEach(function(b) {
-    b.style.height = Math.max(4, Math.random() * 26) + "px";
-  });
+  var bars = document.querySelectorAll(".wbar");
+  for (var i = 0; i < bars.length; i++) bars[i].style.height = Math.max(4, Math.random() * 26) + "px";
   waveTimer = setTimeout(animWave, 120);
 }
 
-// -- SCREENSHOTS -----------------------------
+// ===== SCREENSHOTS =====
 function addShots(files) {
-  Array.from(files).forEach(function(f) {
-    var r = new FileReader();
-    r.onload = function(ev) { shots.push({ dataUrl: ev.target.result, type: f.type }); renderPrev(); };
-    r.readAsDataURL(f);
-  });
+  for (var i = 0; i < files.length; i++) {
+    (function(f) {
+      var r = new FileReader();
+      r.onload = function(ev) { shots.push({ dataUrl: ev.target.result, type: f.type }); renderPrev(); };
+      r.readAsDataURL(f);
+    })(files[i]);
+  }
 }
+
 function onDrop(e) {
   e.preventDefault();
   document.getElementById("dz").classList.remove("ov");
-  addShots(Array.from(e.dataTransfer.files).filter(function(f) { return f.type.startsWith("image/"); }));
+  var imgs = [];
+  for (var i = 0; i < e.dataTransfer.files.length; i++) {
+    if (e.dataTransfer.files[i].type.indexOf("image/") === 0) imgs.push(e.dataTransfer.files[i]);
+  }
+  addShots(imgs);
 }
+
 function renderPrev() {
-  document.getElementById("sprev").innerHTML = shots.map(function(s, i) {
-    return "<div class="sthumb"><img src="" + s.dataUrl + "" alt=""><button class="rmimg" onclick="rmShot(" + i + ")">&#10005;</button></div>";
-  }).join("");
+  var html = "";
+  for (var i = 0; i < shots.length; i++) {
+    html += "<div class='sthumb'><img src='" + shots[i].dataUrl + "' alt=''><button class='rmimg' onclick='rmShot(" + i + ")'>&#10005;</button></div>";
+  }
+  document.getElementById("sprev").innerHTML = html;
 }
+
 function rmShot(i) { shots.splice(i, 1); renderPrev(); }
 
-// -- GEMINI CALL -----------------------------
+// ===== GEMINI =====
 function doAnalyze(tx, onDone) {
   var key = localStorage.getItem("fx_gemini_key");
-  if (!key) { toast("No API key - reload and enter your Gemini key", true); if (onDone) onDone(); return; }
+  if (!key) { toast("No API key found", true); if (onDone) onDone(); return; }
   var lid = document.getElementById("tlink").value;
-  var lt  = lid ? trades.find(function(t) { return t.id === lid; }) : null;
-  var ep  = lt ? (lt.partialExits || []) : [];
-  var pctx = ep.length ? "Existing partials:
-" + ep.map(function(p, i) {
-    return "P" + (i+1) + ": " + (p.sp||"?") + "% @ " + (p.px||"?") + " R:" + (p.rA||"?");
-  }).join("
-") : "";
-
+  var lt = null;
+  for (var i = 0; i < trades.length; i++) { if (trades[i].id === lid) lt = trades[i]; }
+  var ep = lt ? (lt.partialExits || []) : [];
+  var pctx = "";
+  if (ep.length) {
+    pctx = "Existing partials:\n";
+    for (var k = 0; k < ep.length; k++) pctx += "P" + (k+1) + ": " + (ep[k].sp||"?") + "% @ " + (ep[k].px||"?") + " R:" + (ep[k].rA||"?") + "\n";
+  }
   var parts = [];
-  shots.forEach(function(s) {
-    parts.push({ inlineData: { mimeType: s.type || "image/png", data: s.dataUrl.split(",")[1] } });
-  });
-  parts.push({ text:
-    "Forex swing trade journal AI. Trader: 8H TF, stop-limit orders, may take PARTIAL EXITS and run a runner.
-" +
-    "Entry type: " + curType + "
-" +
-    (tx ? "Transcript: "" + tx + """ : "No transcript.") + "
-" +
-    (shots.length ? shots.length + " chart screenshot(s) attached." : "") + "
-" +
-    (lt ? "Linked trade: " + (lt.pair||"") + " " + (lt.direction||"") + " Entry:" + (lt.entry||"") + " SL:" + (lt.stopLoss||"") + " TP:" + (lt.takeProfit||"") : "") + "
-" +
-    pctx + "
-" +
-    "Return ONLY valid JSON (no markdown, no code blocks):
-" +
-    "{"transcript":"summary","pair":"EURUSD or null","direction":"LONG or SHORT or null","entry":"price or null","stopLoss":"price or null","takeProfit":"price or null","riskReward":"1:2.5 or null","timeframe":"8H","setup":"setup name or null","session":"London/NY/Tokyo or null","sentiment":"BULLISH or BEARISH or NEUTRAL","confidence":"HIGH or MEDIUM or LOW","keyLevels":[],"outcome":"WIN or LOSS or null","rAchieved":"number or null","partialExits":[{"sp":50,"px":"price","rA":"1.5","notes":""}],"isPartialExit":false,"isFinalExit":false,"runnerNotes":"or null","notes":"extra"}"
-  });
+  for (var s = 0; s < shots.length; s++) {
+    parts.push({ inlineData: { mimeType: shots[s].type || "image/png", data: shots[s].dataUrl.split(",")[1] } });
+  }
+  var prompt = "Forex swing trade journal AI. Trader: 8H timeframe, stop-limit orders, may take PARTIAL EXITS and run a runner.\n" +
+    "Entry type: " + curType + "\n" +
+    (tx ? "Transcript: " + tx : "No transcript.") + "\n" +
+    (shots.length ? shots.length + " chart screenshot(s) attached." : "") + "\n" +
+    (lt ? "Linked trade: " + (lt.pair||"") + " " + (lt.direction||"") + " Entry:" + (lt.entry||"") + " SL:" + (lt.stopLoss||"") + " TP:" + (lt.takeProfit||"") : "") + "\n" +
+    pctx + "\n" +
+    "Return ONLY valid JSON, no markdown, no code fences:\n" +
+    '{"transcript":"summary","pair":"EURUSD or null","direction":"LONG or SHORT or null","entry":"price or null","stopLoss":"price or null","takeProfit":"price or null","riskReward":"1:2.5 or null","timeframe":"8H","setup":"setup name or null","session":"London/NY/Tokyo or null","sentiment":"BULLISH or BEARISH or NEUTRAL","confidence":"HIGH or MEDIUM or LOW","keyLevels":[],"outcome":"WIN or LOSS or null","rAchieved":"number or null","partialExits":[{"sp":50,"px":"price","rA":"1.5","notes":""}],"isPartialExit":false,"isFinalExit":false,"runnerNotes":"or null","notes":"extra"}';
+  parts.push({ text: prompt });
 
   showSpinner("GEMINI ANALYZING...");
   fetch(GEMINI_ENDPOINT + key, {
@@ -556,24 +557,19 @@ function doAnalyze(tx, onDone) {
   .then(function(r) { return r.json(); })
   .then(function(d) {
     hideSpinner();
-    if (d.error) { toast("Gemini error: " + d.error.message, true); if (onDone) onDone(); return; }
+    if (d.error) { toast("Gemini: " + d.error.message, true); if (onDone) onDone(); return; }
     var raw = "";
-    try { raw = d.candidates[0].content.parts[0].text; } catch(e) { toast("Unexpected Gemini response", true); if (onDone) onDone(); return; }
+    try { raw = d.candidates[0].content.parts[0].text; } catch(e) { toast("Unexpected response", true); if (onDone) onDone(); return; }
     raw = raw.replace(/```json/g, "").replace(/```/g, "").trim();
     var p;
-    try { p = JSON.parse(raw); }
-    catch(e) { p = { transcript: tx || raw, pair: null, direction: null, partialExits: [], notes: raw }; }
+    try { p = JSON.parse(raw); } catch(e) { p = { transcript: tx || raw, pair: null, direction: null, partialExits: [], notes: raw }; }
     if (tx && (!p.transcript || p.transcript.length < 20)) p.transcript = tx;
     document.getElementById("tbox").value = p.transcript || tx || "";
     showExtracted(p);
     lastParsed = p;
     if (onDone) onDone();
   })
-  .catch(function(e) {
-    hideSpinner();
-    toast("Network error: " + e.message, true);
-    if (onDone) onDone();
-  });
+  .catch(function(e) { hideSpinner(); toast("Network error: " + e.message, true); if (onDone) onDone(); });
 }
 
 function showExtracted(d) {
@@ -583,33 +579,37 @@ function showExtracted(d) {
     ["DIRECTION", d.direction, d.direction ? d.direction.toLowerCase() : ""],
     ["ENTRY", d.entry, ""], ["SL", d.stopLoss, ""], ["TP", d.takeProfit, ""],
     ["PLANNED R/R", d.riskReward, ""], ["SETUP", d.setup, ""], ["CONFIDENCE", d.confidence, ""],
-    ["OUTCOME", d.outcome, d.outcome === "WIN" ? "long" : d.outcome === "LOSS" ? "short" : ""],
+    ["OUTCOME", d.outcome, d.outcome === "WIN" ? "long" : (d.outcome === "LOSS" ? "short" : "")],
     ["R ACHIEVED", d.rAchieved, d.rAchieved ? "part" : ""]
-  ].filter(function(f) { return f[1]; });
-  document.getElementById("exgrid").innerHTML = fields.map(function(f) {
-    return "<div><div class="ef-l">" + f[0] + "</div><div class="ef-v " + f[2] + "">" + f[1] + "</div></div>";
-  }).join("");
+  ];
+  var html = "";
+  for (var i = 0; i < fields.length; i++) {
+    if (!fields[i][1]) continue;
+    html += "<div><div class='ef-l'>" + fields[i][0] + "</div><div class='ef-v " + fields[i][2] + "'>" + fields[i][1] + "</div></div>";
+  }
+  document.getElementById("exgrid").innerHTML = html;
   var ps = document.getElementById("parsec");
   if (d.partialExits && d.partialExits.length) {
-    ps.innerHTML = "<div class="parsec"><div class="clabel" style="margin-top:0">PARTIALS DETECTED</div>" +
-      d.partialExits.map(function(p, i) {
-        return "<div class="prow"><span class="plb">P" + (i+1) + "</span><span class="pv">" + (p.sp||"?") + "%</span>" +
-          "<span class="plb">@</span><span class="pv">" + (p.px||"?") + "</span>" +
-          "<span class="plb">R</span><span class="pv">" + (p.rA||"?") + "</span>" +
-          (p.notes ? "<span style="color:#5a5a72;font-size:8px">" + p.notes + "</span>" : "") + "</div>";
-      }).join("") +
-      (d.runnerNotes ? "<div style="font-size:8px;color:#5a5a72;margin-top:4px">RUNNER: " + d.runnerNotes + "</div>" : "") +
-      "</div>";
+    var ph = "<div class='parsec'><div class='clabel' style='margin-top:0'>PARTIALS DETECTED</div>";
+    for (var j = 0; j < d.partialExits.length; j++) {
+      var pe = d.partialExits[j];
+      ph += "<div class='prow'><span class='plb'>P" + (j+1) + "</span><span class='pv'>" + (pe.sp||"?") + "%</span><span class='plb'>@</span><span class='pv'>" + (pe.px||"?") + "</span><span class='plb'>R</span><span class='pv'>" + (pe.rA||"?") + "</span>" + (pe.notes ? "<span style='color:#5a5a72;font-size:8px'>" + pe.notes + "</span>" : "") + "</div>";
+    }
+    if (d.runnerNotes) ph += "<div style='font-size:8px;color:#5a5a72;margin-top:4px'>RUNNER: " + d.runnerNotes + "</div>";
+    ph += "</div>";
+    ps.innerHTML = ph;
   } else { ps.innerHTML = ""; }
 }
 
-// -- SUBMIT ----------------------------------
+// ===== SUBMIT =====
 function doSubmit() {
   var tx = document.getElementById("tbox").value.trim();
   if (!tx && shots.length === 0) { toast("Record voice or add screenshots first", true); return; }
   if (!lastParsed) { doAnalyze(tx, function() { if (lastParsed) doSubmit(); }); return; }
-  var p = lastParsed, lid = document.getElementById("tlink").value;
-  var now = new Date().toISOString(), eid = Date.now();
+  var p = lastParsed;
+  var lid = document.getElementById("tlink").value;
+  var now = new Date().toISOString();
+  var eid = Date.now();
   var entry = {
     id: eid, timestamp: now, type: curType, transcript: tx,
     pair: p.pair||null, direction: p.direction||null, entry: p.entry||null,
@@ -619,43 +619,55 @@ function doSubmit() {
     outcome: p.outcome||null, rAchieved: p.rAchieved||null, partialExits: p.partialExits||[],
     isPartialExit: !!p.isPartialExit, isFinalExit: !!p.isFinalExit,
     runnerNotes: p.runnerNotes||null, notes: p.notes||"",
-    screenshots: shots.map(function(s) { return s.dataUrl; }),
-    linkedTradeId: lid||null
+    screenshots: [], linkedTradeId: lid||null
   };
+  for (var s = 0; s < shots.length; s++) entry.screenshots.push(shots[s].dataUrl);
   entries.unshift(entry);
 
   if (lid) {
-    var idx = trades.findIndex(function(t) { return t.id === lid; });
+    var idx = -1;
+    for (var i = 0; i < trades.length; i++) { if (trades[i].id === lid) idx = i; }
     if (idx !== -1) {
       var tr = JSON.parse(JSON.stringify(trades[idx]));
       if (!tr.entryIds) tr.entryIds = [];
       tr.entryIds.push(eid + "");
       if (curType === "ENTRY") {
         tr.status = "OPEN";
-        ["pair","direction","entry","stopLoss","takeProfit","riskReward"].forEach(function(k) { if (entry[k]) tr[k] = entry[k]; });
+        var keys = ["pair","direction","entry","stopLoss","takeProfit","riskReward"];
+        for (var ki = 0; ki < keys.length; ki++) { if (entry[keys[ki]]) tr[keys[ki]] = entry[keys[ki]]; }
       }
       if (curType === "PARTIAL_EXIT") {
         tr.status = "PARTIAL";
-        var np = (p.partialExits||[]).length > 0
-          ? p.partialExits.map(function(x) { return Object.assign({}, x, { ts: now }); })
-          : (p.rAchieved ? [{ sp: null, px: null, rA: p.rAchieved, notes: (tx||"").substring(0,60), ts: now }] : []);
+        var np = [];
+        if ((p.partialExits||[]).length > 0) {
+          for (var pi = 0; pi < p.partialExits.length; pi++) {
+            var x = p.partialExits[pi]; np.push({ sp: x.sp, px: x.px, rA: x.rA, notes: x.notes, ts: now });
+          }
+        } else if (p.rAchieved) {
+          np.push({ sp: null, px: null, rA: p.rAchieved, notes: tx.substring(0,60), ts: now });
+        }
         tr.partialExits = (tr.partialExits||[]).concat(np);
         tr = calcVWAP(tr);
       }
       if (curType === "FINAL_EXIT") {
-        var fp = (p.partialExits||[]).length > 0 ? p.partialExits.map(function(x) { return Object.assign({}, x, { ts: now }); }) : [];
+        var fp = [];
+        if ((p.partialExits||[]).length > 0) {
+          for (var fi = 0; fi < p.partialExits.length; fi++) {
+            var y = p.partialExits[fi]; fp.push({ sp: y.sp, px: y.px, rA: y.rA, notes: y.notes, ts: now });
+          }
+        }
         tr.status = "CLOSED"; tr.closedAt = now; tr.outcome = p.outcome||null;
         tr.partialExits = (tr.partialExits||[]).concat(fp);
         tr = calcVWAP(tr);
         if (tr.vwapR) tr.rAchieved = parseFloat(tr.vwapR);
         else if (p.rAchieved) tr.rAchieved = parseFloat(p.rAchieved);
-        if (!tr.outcome) tr.outcome = tr.rAchieved >= 0 ? "WIN" : "LOSS";
+        if (!tr.outcome) tr.outcome = (tr.rAchieved >= 0) ? "WIN" : "LOSS";
       }
       trades[idx] = tr;
     }
   } else if (curType === "PLAN" || curType === "ENTRY") {
     var nt = {
-      id: now + "x", createdAt: now, status: curType === "PLAN" ? "PLANNED" : "OPEN",
+      id: now + "x", createdAt: now, status: (curType === "PLAN" ? "PLANNED" : "OPEN"),
       pair: p.pair||null, direction: p.direction||null, entry: p.entry||null,
       stopLoss: p.stopLoss||null, takeProfit: p.takeProfit||null, riskReward: p.riskReward||null,
       timeframe: p.timeframe||"8H", setup: p.setup||null, session: p.session||null,
@@ -671,199 +683,259 @@ function doSubmit() {
   shots = []; lastParsed = null; liveText = "";
   document.getElementById("sprev").innerHTML = "";
   document.getElementById("excard").classList.remove("show");
-  toast(curType === "FINAL_EXIT" ? "Trade closed" : curType === "PARTIAL_EXIT" ? "Partial exit logged" : "Entry saved");
+  toast(curType === "FINAL_EXIT" ? "Trade closed" : (curType === "PARTIAL_EXIT" ? "Partial exit logged" : "Entry saved"));
 }
 
 function calcVWAP(tr) {
   var ps = tr.partialExits || [];
   if (!ps.length) return tr;
-  var ws = ps.filter(function(p) { return p.sp && p.rA; }), vwapR = null;
+  var ws = [];
+  for (var i = 0; i < ps.length; i++) { if (ps[i].sp && ps[i].rA) ws.push(ps[i]); }
+  var vwapR = null;
   if (ws.length) {
-    var tw = ws.reduce(function(s,p) { return s + parseFloat(p.sp); }, 0);
-    var wr = ws.reduce(function(s,p) { return s + parseFloat(p.rA) * parseFloat(p.sp); }, 0);
+    var tw = 0, wr = 0;
+    for (var j = 0; j < ws.length; j++) { tw += parseFloat(ws[j].sp); wr += parseFloat(ws[j].rA) * parseFloat(ws[j].sp); }
     vwapR = (wr/tw).toFixed(2);
   } else {
-    var wR = ps.filter(function(p) { return p.rA; });
-    if (wR.length) vwapR = (wR.reduce(function(s,p) { return s + parseFloat(p.rA); }, 0) / wR.length).toFixed(2);
+    var wR = [], sum = 0;
+    for (var k = 0; k < ps.length; k++) { if (ps[k].rA) { wR.push(ps[k]); sum += parseFloat(ps[k].rA); } }
+    if (wR.length) vwapR = (sum/wR.length).toFixed(2);
   }
-  return Object.assign({}, tr, { vwapR: vwapR, vwapExit: vwapR ? "R " + vwapR + (ws.length ? " (wtd)" : " (avg)") : tr.vwapExit });
+  tr.vwapR = vwapR;
+  tr.vwapExit = vwapR ? ("R " + vwapR + (ws.length ? " (wtd)" : " (avg)")) : tr.vwapExit;
+  return tr;
 }
 
-// -- HEADER STATS ----------------------------
+// ===== HEADER =====
 function updHdr() {
-  document.getElementById("hsO").textContent = trades.filter(function(t) { return t.status === "OPEN"; }).length;
-  document.getElementById("hsP").textContent = trades.filter(function(t) { return t.status === "PARTIAL"; }).length;
-  document.getElementById("hsW").textContent = trades.filter(function(t) { return t.outcome === "WIN"; }).length;
-  document.getElementById("hsL").textContent = trades.filter(function(t) { return t.outcome === "LOSS"; }).length;
+  var o=0,pp=0,w=0,l=0;
+  for (var i=0;i<trades.length;i++){
+    if(trades[i].status==="OPEN")o++;
+    if(trades[i].status==="PARTIAL")pp++;
+    if(trades[i].outcome==="WIN")w++;
+    if(trades[i].outcome==="LOSS")l++;
+  }
+  document.getElementById("hsO").textContent=o;
+  document.getElementById("hsP").textContent=pp;
+  document.getElementById("hsW").textContent=w;
+  document.getElementById("hsL").textContent=l;
 }
 
-// -- TRADES ----------------------------------
+// ===== TRADES =====
 function fTrades(el, f) {
-  document.querySelectorAll("#panel-trades .fchip").forEach(function(c) { c.classList.remove("on"); });
+  var chips = document.querySelectorAll("#panel-trades .fchip");
+  for (var i=0;i<chips.length;i++) chips[i].classList.remove("on");
   el.classList.add("on"); tfilt = f; renderTrades();
 }
+
 function renderTrades() {
   var c = document.getElementById("tcon");
-  var list = tfilt === "all" ? trades : trades.filter(function(t) { return t.status === tfilt; });
-  if (!list.length) { c.innerHTML = "<div class="empty-st"><p>NO TRADES YET.<br>RECORD A PLAN OR ENTRY TO START.</p></div>"; return; }
-  c.innerHTML = list.map(function(t) {
-    var sc = "st-" + t.status.toLowerCase(), oc = t.outcome === "WIN" ? "win" : t.outcome === "LOSS" ? "loss" : "";
+  var list = [];
+  for (var i=0;i<trades.length;i++){ if(tfilt==="all"||trades[i].status===tfilt) list.push(trades[i]); }
+  if (!list.length) { c.innerHTML = "<div class='empty-st'><p>NO TRADES YET.<br>RECORD A PLAN OR ENTRY TO START.</p></div>"; return; }
+  var html = "";
+  for (var n=0;n<list.length;n++){
+    var t = list[n];
+    var sc = "st-" + t.status.toLowerCase();
+    var oc = t.outcome==="WIN"?"win":(t.outcome==="LOSS"?"loss":"");
     var ps = t.partialExits || [];
-    var tl = (t.entryIds||[]).map(function(id) { return entries.find(function(e) { return e.id == id; }); }).filter(Boolean);
-    var tlH = tl.length ? tl.map(function(e) {
-      var dc = {PLAN:"td-plan",ENTRY:"td-entry",PARTIAL_EXIT:"td-partial",FINAL_EXIT:"td-exit",OBSERVATION:"td-obs",REFLECTION:"td-obs"}[e.type]||"td-obs";
-      return "<div class="tli"><div class="tdot " + dc + ""></div><div>" +
-        "<div class="tli-t">" + e.type.replace("_"," ") + "</div>" +
-        "<div class="tli-b">" + (e.transcript||"").substring(0,100) + ((e.transcript||"").length>100?"...":"") + "</div>" +
-        (e.partialExits||[]).map(function(p) { return "<div class="tli-b" style="color:#ff9f00">&#8627; "+(p.sp||"?")+"% @ "+(p.px||"?")+" R:"+(p.rA||"?")+"</div>"; }).join("") +
-        "<div class="tli-ts">" + new Date(e.timestamp).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) + "</div>" +
-        "</div></div>";
-    }).join("") : "<div class="tli-b" style="padding:6px 0">No linked entries yet.</div>";
-    return "<div class="lccard " + sc + " " + oc + "" onclick="this.classList.toggle('exp')">" +
-      "<div class="lch"><div class="lcpair">" + (t.pair||"--") + "</div>" +
-      "<div class="badges">" + (t.direction?"<span class="badge b-"+t.direction.toLowerCase()+"">"+t.direction+"</span>":"") +
-      "<span class="badge b-"+t.status.toLowerCase()+"">"+t.status+"</span>" +
-      (t.outcome?"<span class="badge b-"+t.outcome.toLowerCase()+"">"+t.outcome+"</span>":"") + "</div></div>" +
-      "<div class="lcmet">" +
-      (t.entry?"<div><div class="lcm-l">ENTRY</div><div class="lcm-v">"+t.entry+"</div></div>":"") +
-      (t.stopLoss?"<div><div class="lcm-l">SL</div><div class="lcm-v" style="color:#ff4060">"+t.stopLoss+"</div></div>":"") +
-      (t.takeProfit?"<div><div class="lcm-l">TP</div><div class="lcm-v" style="color:#c8ff00">"+t.takeProfit+"</div></div>":"") +
-      (t.riskReward?"<div><div class="lcm-l">R/R</div><div class="lcm-v">"+t.riskReward+"</div></div>":"") +
-      (t.setup?"<div><div class="lcm-l">SETUP</div><div class="lcm-v">"+t.setup+"</div></div>":"") +
-      (t.rAchieved!=null?"<div><div class="lcm-l">R ACHIEVED</div><div class="lcm-v" style="color:"+(t.rAchieved>=0?"#c8ff00":"#ff4060")+"">"+t.rAchieved+"R</div></div>":"") +
-      "</div>" +
-      (ps.length&&t.vwapExit?"<div class="vwbox"><div><div class="vwi-l">PARTIALS</div><div class="vwi-v">"+ps.length+"</div></div><div><div class="vwi-l">VWAP EXIT R</div><div class="vwi-v">"+t.vwapExit+"</div></div>"+(t.rAchieved!=null?"<div><div class="vwi-l">FINAL R</div><div class="vwi-v">"+t.rAchieved+"</div></div>":"")+"</div>":"") +
-      "<div class="tline">" + tlH + "</div></div>";
-  }).join("");
+    var tlH = "";
+    var ids = t.entryIds || [];
+    var found = 0;
+    for (var ei=0; ei<ids.length; ei++){
+      var e = null;
+      for (var x=0;x<entries.length;x++){ if(entries[x].id==ids[ei]) e=entries[x]; }
+      if(!e) continue;
+      found++;
+      var dotMap = {PLAN:"td-plan",ENTRY:"td-entry",PARTIAL_EXIT:"td-partial",FINAL_EXIT:"td-exit",OBSERVATION:"td-obs",REFLECTION:"td-obs"};
+      var dc = dotMap[e.type] || "td-obs";
+      var peH = "";
+      var pex = e.partialExits || [];
+      for (var pj=0;pj<pex.length;pj++){ peH += "<div class='tli-b' style='color:#ff9f00'>&#8627; " + (pex[pj].sp||"?") + "% @ " + (pex[pj].px||"?") + " R:" + (pex[pj].rA||"?") + "</div>"; }
+      var tdate = new Date(e.timestamp).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+      var tbody = (e.transcript||"").substring(0,100) + ((e.transcript||"").length>100?"...":"");
+      tlH += "<div class='tli'><div class='tdot " + dc + "'></div><div><div class='tli-t'>" + e.type.replace("_"," ") + "</div><div class='tli-b'>" + tbody + "</div>" + peH + "<div class='tli-ts'>" + tdate + "</div></div></div>";
+    }
+    if (!found) tlH = "<div class='tli-b' style='padding:6px 0'>No linked entries yet.</div>";
+    var met = "";
+    if (t.entry) met += "<div><div class='lcm-l'>ENTRY</div><div class='lcm-v'>" + t.entry + "</div></div>";
+    if (t.stopLoss) met += "<div><div class='lcm-l'>SL</div><div class='lcm-v' style='color:#ff4060'>" + t.stopLoss + "</div></div>";
+    if (t.takeProfit) met += "<div><div class='lcm-l'>TP</div><div class='lcm-v' style='color:#c8ff00'>" + t.takeProfit + "</div></div>";
+    if (t.riskReward) met += "<div><div class='lcm-l'>R/R</div><div class='lcm-v'>" + t.riskReward + "</div></div>";
+    if (t.setup) met += "<div><div class='lcm-l'>SETUP</div><div class='lcm-v'>" + t.setup + "</div></div>";
+    if (t.rAchieved != null) met += "<div><div class='lcm-l'>R ACHIEVED</div><div class='lcm-v' style='color:" + (t.rAchieved>=0?"#c8ff00":"#ff4060") + "'>" + t.rAchieved + "R</div></div>";
+    var vw = "";
+    if (ps.length && t.vwapExit) {
+      vw = "<div class='vwbox'><div><div class='vwi-l'>PARTIALS</div><div class='vwi-v'>" + ps.length + "</div></div><div><div class='vwi-l'>VWAP EXIT R</div><div class='vwi-v'>" + t.vwapExit + "</div></div>" + (t.rAchieved!=null?"<div><div class='vwi-l'>FINAL R</div><div class='vwi-v'>" + t.rAchieved + "</div></div>":"") + "</div>";
+    }
+    var dir = t.direction ? "<span class='badge b-" + t.direction.toLowerCase() + "'>" + t.direction + "</span>" : "";
+    var stat = "<span class='badge b-" + t.status.toLowerCase() + "'>" + t.status + "</span>";
+    var out = t.outcome ? "<span class='badge b-" + t.outcome.toLowerCase() + "'>" + t.outcome + "</span>" : "";
+    html += "<div class='lccard " + sc + " " + oc + "' onclick='this.classList.toggle(\"exp\")'><div class='lch'><div class='lcpair'>" + (t.pair||"--") + "</div><div class='badges'>" + dir + stat + out + "</div></div><div class='lcmet'>" + met + "</div>" + vw + "<div class='tline'>" + tlH + "</div></div>";
+  }
+  c.innerHTML = html;
 }
 
-// -- LOG -------------------------------------
+// ===== LOG =====
 function fLog(el, f) {
-  document.querySelectorAll("#panel-log .fchip").forEach(function(c) { c.classList.remove("on"); });
+  var chips = document.querySelectorAll("#panel-log .fchip");
+  for (var i=0;i<chips.length;i++) chips[i].classList.remove("on");
   el.classList.add("on"); lfilt = f; renderLog();
 }
+
 function renderLog() {
   var c = document.getElementById("lcon");
-  var list = lfilt === "all" ? entries : entries.filter(function(e) { return e.type === lfilt; });
-  if (!list.length) { c.innerHTML = "<div class="empty-st"><p>NO ENTRIES YET.</p></div>"; return; }
+  var list = [];
+  for (var i=0;i<entries.length;i++){ if(lfilt==="all"||entries[i].type===lfilt) list.push(entries[i]); }
+  if (!list.length) { c.innerHTML = "<div class='empty-st'><p>NO ENTRIES YET.</p></div>"; return; }
   var bm = {PLAN:"b-plan",ENTRY:"b-entry",OBSERVATION:"b-obs",REFLECTION:"b-refl",PARTIAL_EXIT:"b-exit",FINAL_EXIT:"b-exit"};
-  c.innerHTML = list.map(function(e) {
-    var ec = e.direction==="LONG"?"elong":e.direction==="SHORT"?"eshort":e.type.indexOf("EXIT")>-1?"eexit":"eneut";
+  var html = "";
+  for (var n=0;n<list.length;n++){
+    var e = list[n];
+    var ec = e.direction==="LONG"?"elong":(e.direction==="SHORT"?"eshort":(e.type.indexOf("EXIT")>-1?"eexit":"eneut"));
     var dt = new Date(e.timestamp).toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
-    return "<div class="lentry " + ec + "" onclick="openMod(" + e.id + ")">" +
-      "<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">" +
-      "<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">" +
-      "<div class="epair">" + (e.pair||"--") + "</div>" +
-      "<span class="badge " + (bm[e.type]||"b-plan") + "">" + e.type.replace("_"," ") + "</span>" +
-      (e.direction?"<span style="font-size:9px;font-weight:bold;color:"+(e.direction==="LONG"?"#c8ff00":"#ff4060")+"">"+e.direction+"</span>":"") +
-      (e.outcome?"<span class="badge b-"+e.outcome.toLowerCase()+"">"+e.outcome+"</span>":"") +
-      "</div><div style="font-size:8px;color:#5a5a72;letter-spacing:1px">" + dt + "</div></div>" +
-      "<div class="ebody">" + (e.transcript||"").substring(0,200) + ((e.transcript||"").length>200?"...":"") + "</div>" +
-      ((e.partialExits||[]).length?"<div style="margin-top:6px">"+e.partialExits.map(function(p){return "<div style="font-size:8px;color:#ff9f00">&#8627; P"+(p.sp||"?")+"% @ "+(p.px||"?")+" R:"+(p.rA||"?")+"</div>";}).join("")+"</div>":"") +
-      "<div class="edet">" +
-      (e.entry?"<div><span class="ed-l">ENTRY</span><span class="ed-v">"+e.entry+"</span></div>":"") +
-      (e.stopLoss?"<div><span class="ed-l">SL</span><span class="ed-v">"+e.stopLoss+"</span></div>":"") +
-      (e.takeProfit?"<div><span class="ed-l">TP</span><span class="ed-v">"+e.takeProfit+"</span></div>":"") +
-      (e.riskReward?"<div><span class="ed-l">R/R</span><span class="ed-v">"+e.riskReward+"</span></div>":"") +
-      (e.rAchieved?"<div><span class="ed-l">R ACHIEVED</span><span class="ed-v">"+e.rAchieved+"R</span></div>":"") +
-      (e.setup?"<div><span class="ed-l">SETUP</span><span class="ed-v">"+e.setup+"</span></div>":"") +
-      "</div>" +
-      ((e.screenshots||[]).length?"<div style="font-size:8px;color:#00d4ff;margin-top:6px">&#128248; "+e.screenshots.length+" screenshot"+(e.screenshots.length>1?"s":"")+"</div>":"") +
-      "</div>";
-  }).join("");
+    var dir = e.direction ? "<span style='font-size:9px;font-weight:bold;color:" + (e.direction==="LONG"?"#c8ff00":"#ff4060") + "'>" + e.direction + "</span>" : "";
+    var out = e.outcome ? "<span class='badge b-" + e.outcome.toLowerCase() + "'>" + e.outcome + "</span>" : "";
+    var peH = "";
+    var pex = e.partialExits || [];
+    for (var pj=0;pj<pex.length;pj++){ peH += "<div style='font-size:8px;color:#ff9f00'>&#8627; P" + (pex[pj].sp||"?") + "% @ " + (pex[pj].px||"?") + " R:" + (pex[pj].rA||"?") + "</div>"; }
+    if (peH) peH = "<div style='margin-top:6px'>" + peH + "</div>";
+    var det = "";
+    if (e.entry) det += "<div><span class='ed-l'>ENTRY</span><span class='ed-v'>" + e.entry + "</span></div>";
+    if (e.stopLoss) det += "<div><span class='ed-l'>SL</span><span class='ed-v'>" + e.stopLoss + "</span></div>";
+    if (e.takeProfit) det += "<div><span class='ed-l'>TP</span><span class='ed-v'>" + e.takeProfit + "</span></div>";
+    if (e.riskReward) det += "<div><span class='ed-l'>R/R</span><span class='ed-v'>" + e.riskReward + "</span></div>";
+    if (e.rAchieved) det += "<div><span class='ed-l'>R ACHIEVED</span><span class='ed-v'>" + e.rAchieved + "R</span></div>";
+    if (e.setup) det += "<div><span class='ed-l'>SETUP</span><span class='ed-v'>" + e.setup + "</span></div>";
+    var ss = (e.screenshots && e.screenshots.length) ? "<div style='font-size:8px;color:#00d4ff;margin-top:6px'>&#128248; " + e.screenshots.length + " screenshot" + (e.screenshots.length>1?"s":"") + "</div>" : "";
+    var body = (e.transcript||"").substring(0,200) + ((e.transcript||"").length>200?"...":"");
+    html += "<div class='lentry " + ec + "' onclick='openMod(" + e.id + ")'><div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px'><div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><div class='epair'>" + (e.pair||"--") + "</div><span class='badge " + (bm[e.type]||"b-plan") + "'>" + e.type.replace("_"," ") + "</span>" + dir + out + "</div><div style='font-size:8px;color:#5a5a72;letter-spacing:1px'>" + dt + "</div></div><div class='ebody'>" + body + "</div>" + peH + "<div class='edet'>" + det + "</div>" + ss + "</div>";
+  }
+  c.innerHTML = html;
 }
 
-// -- MODAL -----------------------------------
+// ===== MODAL =====
 function openMod(id) {
-  var e = entries.find(function(x) { return x.id == id; }); if (!e) return;
+  var e = null;
+  for (var i=0;i<entries.length;i++){ if(entries[i].id==id) e=entries[i]; }
+  if (!e) return;
   document.getElementById("mtit").textContent = (e.pair||"Note") + (e.direction ? " -- " + e.direction : "");
-  document.getElementById("mmet").textContent =
-    new Date(e.timestamp).toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}) + " " +
-    new Date(e.timestamp).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}) + " - " + e.type.replace("_"," ");
-  var flds = [["PAIR",e.pair],["DIRECTION",e.direction],["ENTRY",e.entry],["SL",e.stopLoss],
-    ["TP",e.takeProfit],["R/R",e.riskReward],["R ACHIEVED",e.rAchieved],
-    ["SETUP",e.setup],["CONFIDENCE",e.confidence],["OUTCOME",e.outcome]].filter(function(f){return f[1];});
-  document.getElementById("mex").innerHTML = flds.map(function(f) {
-    var c = f[1]==="LONG"||f[1]==="WIN"?"long":f[1]==="SHORT"||f[1]==="LOSS"?"short":"";
-    return "<div><div class="ef-l">" + f[0] + "</div><div class="ef-v " + c + "">" + f[1] + "</div></div>";
-  }).join("");
+  var d1 = new Date(e.timestamp).toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+  var d2 = new Date(e.timestamp).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+  document.getElementById("mmet").textContent = d1 + " " + d2 + " - " + e.type.replace("_"," ");
+  var flds = [["PAIR",e.pair],["DIRECTION",e.direction],["ENTRY",e.entry],["SL",e.stopLoss],["TP",e.takeProfit],["R/R",e.riskReward],["R ACHIEVED",e.rAchieved],["SETUP",e.setup],["CONFIDENCE",e.confidence],["OUTCOME",e.outcome]];
+  var html = "";
+  for (var f=0;f<flds.length;f++){
+    if(!flds[f][1]) continue;
+    var cls = (flds[f][1]==="LONG"||flds[f][1]==="WIN")?"long":((flds[f][1]==="SHORT"||flds[f][1]==="LOSS")?"short":"");
+    html += "<div><div class='ef-l'>" + flds[f][0] + "</div><div class='ef-v " + cls + "'>" + flds[f][1] + "</div></div>";
+  }
+  document.getElementById("mex").innerHTML = html;
   document.getElementById("mtr").textContent = e.transcript || e.notes || "--";
-  document.getElementById("mss").innerHTML = (e.screenshots||[]).slice(0,3).map(function(s) {
-    return "<img src="" + s + "" class="mss-img" alt="chart">";
-  }).join("");
+  var ssH = "";
+  var sc = e.screenshots || [];
+  for (var s=0;s<sc.length && s<3;s++){ ssH += "<img src='" + sc[s] + "' class='mss-img' alt='chart'>"; }
+  document.getElementById("mss").innerHTML = ssH;
   document.getElementById("movl").classList.add("open");
 }
+
 function closeMod() { document.getElementById("movl").classList.remove("open"); }
 
-// -- ANALYTICS -------------------------------
+// ===== ANALYTICS =====
 function renderAnalytics() {
-  var closed = trades.filter(function(t) { return t.status === "CLOSED"; });
-  var wins   = closed.filter(function(t) { return t.outcome === "WIN"; });
-  var losses = closed.filter(function(t) { return t.outcome === "LOSS"; });
-  var wr     = closed.length ? Math.round(wins.length/closed.length*100)+"%" : "--";
-  var rv     = closed.filter(function(t) { return t.rAchieved != null; }).map(function(t) { return parseFloat(t.rAchieved); });
-  var ar     = rv.length ? (rv.reduce(function(a,b){return a+b;},0)/rv.length).toFixed(2)+"R" : "--";
-  document.getElementById("aT").textContent  = trades.length;
-  document.getElementById("aW").textContent  = wins.length;
-  document.getElementById("aL").textContent  = losses.length;
+  var closed=[], wins=[], losses=[], rv=[];
+  for (var i=0;i<trades.length;i++){
+    if(trades[i].status==="CLOSED"){
+      closed.push(trades[i]);
+      if(trades[i].outcome==="WIN")wins.push(trades[i]);
+      if(trades[i].outcome==="LOSS")losses.push(trades[i]);
+      if(trades[i].rAchieved!=null)rv.push(parseFloat(trades[i].rAchieved));
+    }
+  }
+  var wr = closed.length ? Math.round(wins.length/closed.length*100) + "%" : "--";
+  var sum = 0; for(var r=0;r<rv.length;r++) sum+=rv[r];
+  var ar = rv.length ? (sum/rv.length).toFixed(2) + "R" : "--";
+  document.getElementById("aT").textContent = trades.length;
+  document.getElementById("aW").textContent = wins.length;
+  document.getElementById("aL").textContent = losses.length;
   document.getElementById("aWR").textContent = wr;
   document.getElementById("aAR").textContent = ar;
   var now = new Date(), days = [];
-  for (var i = 13; i >= 0; i--) {
-    var d = new Date(now); d.setDate(d.getDate()-i);
+  for (var dd=13; dd>=0; dd--){
+    var d = new Date(now); d.setDate(d.getDate()-dd);
     var k = d.toISOString().slice(0,10);
-    days.push({ l: d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}), c: entries.filter(function(e){return e.timestamp&&e.timestamp.slice(0,10)===k;}).length });
+    var cnt = 0;
+    for (var en=0;en<entries.length;en++){ if(entries[en].timestamp && entries[en].timestamp.slice(0,10)===k) cnt++; }
+    days.push({ l: d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}), c: cnt });
   }
-  var maxC = Math.max.apply(null, days.map(function(d){return d.c;}).concat([1]));
-  document.getElementById("bch").innerHTML = days.map(function(d) {
-    return "<div class="bcol"><div class="bbar" style="height:"+(d.c/maxC*72)+"px"></div><div class="blbl">"+d.l.split(" ")[0]+"</div></div>";
-  }).join("");
+  var maxC = 1;
+  for (var mc=0;mc<days.length;mc++){ if(days[mc].c>maxC) maxC=days[mc].c; }
+  var bch = "";
+  for (var b=0;b<days.length;b++){ bch += "<div class='bcol'><div class='bbar' style='height:" + (days[b].c/maxC*72) + "px'></div><div class='blbl'>" + days[b].l.split(" ")[0] + "</div></div>"; }
+  document.getElementById("bch").innerHTML = bch;
   var pm = {};
-  trades.forEach(function(t) {
-    if (!t.pair) return;
-    if (!pm[t.pair]) pm[t.pair] = {l:0,s:0,w:0,ls:0};
-    if (t.direction==="LONG") pm[t.pair].l++; else if (t.direction==="SHORT") pm[t.pair].s++;
-    if (t.outcome==="WIN") pm[t.pair].w++; else if (t.outcome==="LOSS") pm[t.pair].ls++;
-  });
-  var pr = Object.entries(pm).sort(function(a,b){return(b[1].l+b[1].s)-(a[1].l+a[1].s);});
-  document.getElementById("ptbd").innerHTML = pr.length ? pr.map(function(x) {
-    return "<tr><td style="font-weight:bold">"+x[0]+"</td><td style="color:#c8ff00">"+x[1].l+"</td><td style="color:#ff4060">"+x[1].s+"</td><td style="color:#c8ff00">"+x[1].w+"</td><td style="color:#ff4060">"+x[1].ls+"</td></tr>";
-  }).join("") : "<tr><td colspan="5" style="color:#5a5a72;padding:12px 0">No trades yet</td></tr>";
-  var maxR = Math.max.apply(null, rv.map(function(v){return Math.abs(v);}).concat([1]));
-  document.getElementById("rrch").innerHTML = closed.length ? closed.map(function(t) {
-    var r=parseFloat(t.rAchieved)||0, pct=Math.min(Math.abs(r)/maxR*100,100), w=r>=0;
-    return "<div class="rrrow"><span style="font-size:8px;color:#5a5a72;width:45px;flex-shrink:0">"+(t.pair||"?")+"</span>" +
-      "<div class="rrbw"><div class="rrb" style="width:"+pct+"%;background:"+(w?"#c8ff00":"#ff4060")+""></div></div>" +
-      "<span style="font-size:9px;font-weight:bold;color:"+(w?"#c8ff00":"#ff4060")+";width:32px;text-align:right;flex-shrink:0">"+(r>0?"+":"")+r+"R</span></div>";
-  }).join("") : "<div style="color:#5a5a72;font-size:9px;padding:10px 0">No closed trades yet</div>";
+  for (var pt=0;pt<trades.length;pt++){
+    var t = trades[pt];
+    if(!t.pair) continue;
+    if(!pm[t.pair]) pm[t.pair]={l:0,s:0,w:0,ls:0};
+    if(t.direction==="LONG")pm[t.pair].l++; else if(t.direction==="SHORT")pm[t.pair].s++;
+    if(t.outcome==="WIN")pm[t.pair].w++; else if(t.outcome==="LOSS")pm[t.pair].ls++;
+  }
+  var pairs = Object.keys(pm);
+  pairs.sort(function(a,b){ return (pm[b].l+pm[b].s)-(pm[a].l+pm[a].s); });
+  var ptb = "";
+  if (pairs.length) {
+    for (var pr=0;pr<pairs.length;pr++){
+      var pn = pairs[pr];
+      ptb += "<tr><td style='font-weight:bold'>" + pn + "</td><td style='color:#c8ff00'>" + pm[pn].l + "</td><td style='color:#ff4060'>" + pm[pn].s + "</td><td style='color:#c8ff00'>" + pm[pn].w + "</td><td style='color:#ff4060'>" + pm[pn].ls + "</td></tr>";
+    }
+  } else { ptb = "<tr><td colspan='5' style='color:#5a5a72;padding:12px 0'>No trades yet</td></tr>"; }
+  document.getElementById("ptbd").innerHTML = ptb;
+  var maxR = 1;
+  for (var mr=0;mr<rv.length;mr++){ if(Math.abs(rv[mr])>maxR) maxR=Math.abs(rv[mr]); }
+  var rrh = "";
+  if (closed.length) {
+    for (var cl=0;cl<closed.length;cl++){
+      var rval = parseFloat(closed[cl].rAchieved) || 0;
+      var pct = Math.min(Math.abs(rval)/maxR*100, 100);
+      var won = rval >= 0;
+      rrh += "<div class='rrrow'><span style='font-size:8px;color:#5a5a72;width:45px;flex-shrink:0'>" + (closed[cl].pair||"?") + "</span><div class='rrbw'><div class='rrb' style='width:" + pct + "%;background:" + (won?"#c8ff00":"#ff4060") + "'></div></div><span style='font-size:9px;font-weight:bold;color:" + (won?"#c8ff00":"#ff4060") + ";width:32px;text-align:right;flex-shrink:0'>" + (rval>0?"+":"") + rval + "R</span></div>";
+    }
+  } else { rrh = "<div style='color:#5a5a72;font-size:9px;padding:10px 0'>No closed trades yet</div>"; }
+  document.getElementById("rrch").innerHTML = rrh;
   var su = {};
-  entries.forEach(function(e) { if (e.setup) su[e.setup] = (su[e.setup]||0)+1; });
-  document.getElementById("stags").innerHTML = Object.entries(su).sort(function(a,b){return b[1]-a[1];}).map(function(x) {
-    return "<span style="background:var(--sf2);border:1px solid var(--bd);padding:4px 10px;border-radius:20px;font-size:8px;letter-spacing:1px;color:var(--txt)">"+x[0]+" <span style="color:#c8ff00">"+x[1]+"</span></span>";
-  }).join("") || "<span style="color:#5a5a72;font-size:9px">No setups logged yet</span>";
+  for (var se=0;se<entries.length;se++){ if(entries[se].setup) su[entries[se].setup]=(su[entries[se].setup]||0)+1; }
+  var setups = Object.keys(su);
+  setups.sort(function(a,b){ return su[b]-su[a]; });
+  var stg = "";
+  if (setups.length) {
+    for (var st=0;st<setups.length;st++){ stg += "<span style='background:#16161f;border:1px solid #252535;padding:4px 10px;border-radius:20px;font-size:8px;letter-spacing:1px;color:#e0e0f0'>" + setups[st] + " <span style='color:#c8ff00'>" + su[setups[st]] + "</span></span>"; }
+  } else { stg = "<span style='color:#5a5a72;font-size:9px'>No setups logged yet</span>"; }
+  document.getElementById("stags").innerHTML = stg;
 }
 
-// -- EXPORT CSV ------------------------------
+// ===== EXPORT =====
 function exportCSV() {
   var rows = [["Date","Type","Pair","Direction","Entry","SL","TP","R/R","Setup","Outcome","R Achieved","Transcript"]];
-  entries.forEach(function(e) {
+  for (var i=0;i<entries.length;i++){
+    var e = entries[i];
     rows.push([
       new Date(e.timestamp).toLocaleDateString("en-GB"),
       e.type, e.pair||"", e.direction||"", e.entry||"", e.stopLoss||"", e.takeProfit||"",
       e.riskReward||"", e.setup||"", e.outcome||"", e.rAchieved||"",
-      '"' + (e.transcript||"").replace(/"/g,"''") + '"'
+      '"' + (e.transcript||"").replace(/"/g, "''") + '"'
     ]);
-  });
-  var csv = rows.map(function(r){return r.join(",");}).join("
-");
+  }
+  var csv = "";
+  for (var r=0;r<rows.length;r++) csv += rows[r].join(",") + "\n";
   var a = document.createElement("a");
   a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
   a.download = "flux_journal_" + new Date().toISOString().slice(0,10) + ".csv";
   a.click();
 }
 
-// -- SPINNER / TOAST -------------------------
-function showSpinner(m) { document.getElementById("spinmsg").textContent = m||"ANALYZING..."; document.getElementById("spinner").classList.add("on"); }
+// ===== UI HELPERS =====
+function showSpinner(m) { document.getElementById("spinmsg").textContent = m || "ANALYZING..."; document.getElementById("spinner").classList.add("on"); }
 function hideSpinner() { document.getElementById("spinner").classList.remove("on"); }
 function toast(msg, err) {
   var t = document.getElementById("toast");
