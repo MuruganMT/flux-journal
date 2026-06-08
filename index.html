@@ -584,7 +584,19 @@ function popLinker() {
   for (var i = 0; i < trades.length; i++) {
     var t = trades[i];
     if (t.status === "CLOSED") continue;
-    html += "<option value='" + t.id + "'>" + (t.pair || "?") + " " + (t.direction || "") + " -- " + t.status + "</option>";
+    var label = t.pair;
+    if (!label) {
+      // No pair captured - fall back to a readable date so it's still identifiable
+      var stamp = t.createdAt || t.id;
+      var dt = new Date(stamp);
+      if (!isNaN(dt.getTime())) {
+        label = "Trade " + dt.toLocaleDateString("en-GB", {day:"2-digit", month:"short"}) + " " + dt.toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+      } else {
+        label = "Untitled trade";
+      }
+    }
+    var dir = t.direction ? (" " + t.direction) : "";
+    html += "<option value='" + t.id + "'>" + label + dir + " -- " + t.status + "</option>";
   }
   sel.innerHTML = html;
 }
@@ -709,7 +721,9 @@ function doAnalyze(tx, onDone) {
     (shots.length ? shots.length + " chart screenshot(s) attached." : "") + "\n" +
     (lt ? "Linked trade: " + (lt.pair||"") + " " + (lt.direction||"") + " Entry:" + (lt.entry||"") + " SL:" + (lt.stopLoss||"") + " TP:" + (lt.takeProfit||"") : "") + "\n" +
     pctx + "\n" +
-    "Return ONLY valid JSON, no markdown, no code fences:\n" +
+    "RULES: Respond with ONLY the JSON object below -- no prose before or after, no markdown, no code fences. " +
+    "Do NOT invent or guess values. If a pair, price, or detail is not clearly stated in the transcript or clearly visible in the screenshots, use null. " +
+    "But if the pair IS stated or visible, you MUST fill the pair field (e.g. GBP/CHF). Keep the transcript field to a short one or two sentence summary, not a full essay.\n" +
     '{"transcript":"summary","pair":"EURUSD or null","direction":"LONG or SHORT or null","entry":"price or null","stopLoss":"price or null","takeProfit":"price or null","riskReward":"1:2.5 or null","timeframe":"8H","setup":"setup name or null","session":"London/NY/Tokyo or null","sentiment":"BULLISH or BEARISH or NEUTRAL","confidence":"HIGH or MEDIUM or LOW","keyLevels":[],"outcome":"WIN or LOSS or null","rAchieved":"number or null","partialExits":[{"sp":50,"px":"price","rA":"1.5","notes":""}],"isPartialExit":false,"isFinalExit":false,"runnerNotes":"or null","notes":"extra"}';
   parts.push({ text: prompt });
 
@@ -726,8 +740,26 @@ function doAnalyze(tx, onDone) {
     var raw = "";
     try { raw = d.candidates[0].content.parts[0].text; } catch(e) { toast("Unexpected response", true); if (onDone) onDone(); return; }
     raw = raw.replace(/```json/g, "").replace(/```/g, "").trim();
+    // Gemini sometimes wraps JSON in prose -- extract the object between first { and last }
+    var js = raw.indexOf("{");
+    var je = raw.lastIndexOf("}");
+    var jsonStr = (js > -1 && je > js) ? raw.substring(js, je + 1) : raw;
     var p;
-    try { p = JSON.parse(raw); } catch(e) { p = { transcript: tx || raw, pair: null, direction: null, partialExits: [], notes: raw }; }
+    try { p = JSON.parse(jsonStr); }
+    catch(e) {
+      p = { transcript: tx || raw, pair: null, direction: null, partialExits: [], notes: raw };
+    }
+    // Bulletproof salvage: if the pair/direction are missing, read them from the user's own words.
+    // Uses a known currency-code list so it never misfires on ordinary words.
+    var CCY = "(?:USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|SGD|HKD|SEK|NOK|MXN|ZAR|TRY|CNH|CNY|PLN|DKK|HUF|CZK)";
+    var source = (tx && tx.length) ? tx : raw;
+    if (!p.pair && source) {
+      var pm = source.match(new RegExp("\\b" + CCY + "\\s*/?\\s*" + CCY + "\\b", "i"));
+      if (pm) p.pair = pm[0].replace(/\s/g, "").replace(/([A-Za-z]{3})\/?([A-Za-z]{3})/, "$1/$2").toUpperCase();
+    }
+    // Direction is intentionally NOT guessed from prose -- "long wicks" vs "going short"
+    // is ambiguous, and a wrong direction in a journal is worse than a blank one.
+    // Gemini parses direction from context; if it cannot, the field stays blank.
     if (tx && (!p.transcript || p.transcript.length < 20)) p.transcript = tx;
     document.getElementById("tbox").value = p.transcript || tx || "";
     showExtracted(p);
