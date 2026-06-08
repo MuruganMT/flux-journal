@@ -279,11 +279,11 @@ window.addEventListener('load', function(){
 });
 
 // ── API CALLS via fetch ──
-function api(action, data, onSuccess, onError) {
-  fetch(GAS_URL, {
+fetch(GAS_URL, {
     method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
     body: JSON.stringify({action: action, data: data})
-  })
+  }))
   .then(function(r){ return r.json(); })
   .then(function(res){
     if(res.ok){ onSuccess(res); }
