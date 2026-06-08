@@ -172,7 +172,7 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
 .spin-ring{width:40px;height:40px;border:3px solid var(--bd);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;}
 .spin-msg{font-size:10px;letter-spacing:2px;color:var(--mu);}
 /* TOAST */
-.toast{position:fixed;bottom:16px;right:16px;background:var(--sf);border:1px solid var(--acc);color:var(--acc);font-family:"Space Mono",monospace;font-size:9px;letter-spacing:1px;padding:8px 16px;border-radius:3px;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;}
+.toast{position:fixed;bottom:16px;right:16px;background:var(--sf);border:1px solid var(--acc);color:var(--acc);font-family:"Space Mono",monospace;font-size:9px;letter-spacing:1px;padding:8px 16px;border-radius:3px;z-index:600;opacity:0;transition:opacity .3s;pointer-events:none;}
 .toast.show{opacity:1;}.toast.err{border-color:var(--acc2);color:var(--acc2);}
 .empty-st{text-align:center;padding:40px 20px;color:var(--mu);}
 .empty-st p{font-size:10px;letter-spacing:1px;line-height:1.8;}
@@ -193,6 +193,7 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
       Free key from <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a><br>
       Stored locally in your browser. Never sent anywhere except Google.
     </div>
+    <div id="keyErr" style="color:#ff4060;font-size:9px;letter-spacing:1px;margin-bottom:12px;display:none"></div>
     <button class="setup-btn" onclick="saveKey()">START JOURNALING</button>
   </div>
 </div>
@@ -363,11 +364,19 @@ window.addEventListener("load", function() {
 // -- SETUP -----------------------------------
 function saveKey() {
   var key = document.getElementById("keyInput").value.trim();
-  if (!key || key.length < 10) { toast("Please enter a valid API key", true); return; }
+  var err = document.getElementById("keyErr");
+  if (!key) {
+    err.textContent = "Please enter your Gemini API key";
+    err.style.display = "block";
+    return;
+  }
+  err.style.display = "none";
   localStorage.setItem("fx_gemini_key", key);
   document.getElementById("setup").style.display = "none";
   document.getElementById("mainApp").style.display = "block";
-  popLinker(); updHdr(); renderAnalytics();
+  try { popLinker(); } catch(e) {}
+  try { updHdr(); } catch(e) {}
+  try { renderAnalytics(); } catch(e) {}
 }
 
 // Allow pressing Enter in key input
