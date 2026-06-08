@@ -63,6 +63,16 @@ nav{display:flex;gap:2px;margin-bottom:24px;border-bottom:1px solid var(--bd);}
 .wvform{height:32px;width:100%;display:flex;align-items:center;justify-content:center;gap:2px;opacity:0;transition:opacity .3s;}
 .wvform.on{opacity:1;}
 .wbar{width:2px;background:var(--acc2);border-radius:2px;height:4px;}
+/* CHEAT SHEET */
+.cheat{background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.18);border-radius:3px;padding:12px;margin-bottom:14px;}
+.cheat-h{display:flex;align-items:center;justify-content:space-between;cursor:pointer;}
+.cheat-t{font-size:9px;letter-spacing:2px;color:var(--acc3);}
+.cheat-tog{font-size:8px;color:var(--mu);letter-spacing:1px;}
+.cheat-body{margin-top:10px;display:block;}
+.cheat.collapsed .cheat-body{display:none;}
+.cheat-script{font-size:10px;line-height:1.7;color:#b8d8e8;font-style:italic;background:rgba(0,0,0,.2);border-left:2px solid var(--acc3);padding:8px 10px;border-radius:2px;margin-bottom:8px;}
+.cheat-tips{font-size:8px;line-height:1.7;color:var(--mu);letter-spacing:.5px;}
+.cheat-tips b{color:#8aa;font-weight:700;}
 /* TRANSCRIPT */
 textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px;padding:12px;min-height:100px;font-size:10px;line-height:1.75;color:var(--txt);width:100%;font-family:"Space Mono",monospace;outline:none;resize:vertical;}
 /* SCREENSHOTS */
@@ -232,6 +242,16 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
           <button class="tbtn" onclick="pickType(this,'FINAL_EXIT')">FINAL EXIT</button>
           <button class="tbtn" onclick="pickType(this,'REFLECTION')">REFLECTION</button>
         </div>
+        <div class="cheat" id="cheat">
+          <div class="cheat-h" onclick="document.getElementById('cheat').classList.toggle('collapsed')">
+            <span class="cheat-t" id="cheatTitle">PROMPT GUIDE</span>
+            <span class="cheat-tog">tap to toggle</span>
+          </div>
+          <div class="cheat-body">
+            <div class="cheat-script" id="cheatScript"></div>
+            <div class="cheat-tips" id="cheatTips"></div>
+          </div>
+        </div>
         <div class="clabel">LINK TO TRADE</div>
         <div class="linker"><span class="ll">TRADE</span><select id="tlink"><option value="">-- New / Standalone --</option></select></div>
         <div class="clabel">VOICE RECORD</div>
@@ -362,9 +382,55 @@ window.addEventListener("load", function() {
 });
 
 function boot() {
+  try { updateCheat(); } catch(e) { console.error(e); }
   try { popLinker(); } catch(e) { console.error(e); }
   try { updHdr(); } catch(e) { console.error(e); }
   try { renderAnalytics(); } catch(e) { console.error(e); }
+}
+
+
+// ===== CHEAT SHEET =====
+var CHEAT_SHEET = {
+  PLAN: {
+    title: "PROMPT GUIDE -- TRADE PLAN",
+    script: "EUR/USD, looking long. On the 8-hour I'm seeing multiple long wicks rejecting the support zone around 1.0850 -- strong rejection, buyers defending. Plan is a limit order at the wick low 1.0845, stop 1.5 ATR below at 1.0800, lot sized for 1 percent risk. First target 2R. London session, confidence medium.",
+    tips: "Say: <b>pair + direction</b>, the <b>zone</b>, what the <b>wicks</b> are doing, your <b>order type</b> (limit/stop) and price, the <b>1.5 ATR stop</b>, and that lot size is <b>1% risk</b>."
+  },
+  ENTRY: {
+    title: "PROMPT GUIDE -- ENTRY LOG",
+    script: "Placed EUR/USD long. Stop-limit order filled at 1.0846, right at the wick low. Stop at 1.0800, that's 1.5 ATR on the 8-hour. Lot size set for 1 percent risk. Order is live.",
+    tips: "Link this to your <b>plan</b> first. State the <b>fill price</b>, confirm the <b>stop</b> and that it's <b>1.5 ATR</b>, and the <b>1% lot size</b>."
+  },
+  OBSERVATION: {
+    title: "PROMPT GUIDE -- OBSERVATION",
+    script: "EUR/USD update -- price holding above entry, wicks still defending the support zone on the 8-hour. Momentum building toward 2R. Holding, no changes to stop yet.",
+    tips: "A free note mid-trade. Mention what <b>price/structure</b> is doing and whether you're <b>changing anything</b>."
+  },
+  PARTIAL_EXIT: {
+    title: "PROMPT GUIDE -- PARTIAL EXIT",
+    script: "EUR/USD hit 2R. Booked 50 percent here, moved stop to breakeven on the rest. 1R locked in, running 1R at breakeven toward the next target. -- Next one: booked another 1R, total on the table hit 2R again, trailing stop per my indicator.",
+    tips: "Link to the <b>open trade</b>. Say the <b>percent closed</b> and the <b>R</b> (e.g. 50% at 2R) -- that feeds the VWAP exit math. Mention <b>stop to BE</b> or <b>trailing per indicator</b>."
+  },
+  FINAL_EXIT: {
+    title: "PROMPT GUIDE -- FINAL EXIT",
+    script: "Closed the runner on EUR/USD at 1.0975. Trailing stop from my indicator got hit. Final R on the remainder about 2.4. Trade's a win -- clean follow-through after the first partial.",
+    tips: "Link to the trade -- this <b>closes</b> it. State the <b>exit price</b>, what closed it (<b>trailing stop / target</b>), the <b>final R</b>, and <b>win or loss</b>."
+  },
+  REFLECTION: {
+    title: "PROMPT GUIDE -- REFLECTION",
+    script: "EUR/USD recap -- the multiple-wick rejection on the 8-hour was textbook and the limit fill at the wick low gave me a tight stop. Scaling 50 percent at 2R then trailing the rest worked. One note: I hesitated moving to breakeven, want to be more mechanical next time.",
+    tips: "Standalone journaling. Capture <b>what worked</b>, <b>what didn't</b>, and one <b>actionable insight</b>."
+  }
+};
+
+function updateCheat() {
+  var cs = CHEAT_SHEET[curType] || CHEAT_SHEET.PLAN;
+  var titleEl = document.getElementById("cheatTitle");
+  var scriptEl = document.getElementById("cheatScript");
+  var tipsEl = document.getElementById("cheatTips");
+  if (titleEl) titleEl.textContent = cs.title;
+  if (scriptEl) scriptEl.textContent = '"' + cs.script + '"';
+  if (tipsEl) tipsEl.innerHTML = cs.tips;
 }
 
 // ===== SETUP =====
@@ -410,6 +476,7 @@ function pickType(btn, t) {
   var sb = document.getElementById("sbtn");
   sb.className = "sbtn" + (isExit ? " exitm" : "");
   sb.querySelector(".btxt").textContent = isExit ? "LOG EXIT" : "ANALYZE & SAVE";
+  updateCheat();
 }
 
 // ===== LINKER =====
