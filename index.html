@@ -282,7 +282,7 @@ window.addEventListener('load', function(){
 fetch(GAS_URL, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({action: action, data: data})
+    body: JSON.stringify({action: action, data: data, token: 'fluxjournalmurugan20261!'})
   }))
   .then(function(r){ return r.json(); })
   .then(function(res){
