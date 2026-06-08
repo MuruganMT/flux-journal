@@ -203,6 +203,11 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
       Free key from <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a><br>
       Stored locally in your browser. Never sent anywhere except Google.
     </div>
+    <div class="setup-label">SYNC URL (OPTIONAL -- FOR MULTI-DEVICE)</div>
+    <input class="setup-input" type="text" id="syncInput" placeholder="https://script.google.com/macros/s/.../exec">
+    <div class="setup-hint">
+      Paste your Apps Script deployment URL to sync trades across phone + laptop. Leave blank to store only on this device.
+    </div>
     <div id="keyErr" style="color:#ff4060;font-size:9px;letter-spacing:1px;margin-bottom:12px;display:none"></div>
     <button class="setup-btn" onclick="saveKey()">START JOURNALING</button>
   </div>
@@ -219,7 +224,9 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
         <div><div class="hs-v" id="hsW" style="color:#c8ff00">0</div><div class="hs-l">WINS</div></div>
         <div><div class="hs-v" id="hsL" style="color:#ff4060">0</div><div class="hs-l">LOSSES</div></div>
       </div>
-      <button onclick="exportCSV()" style="background:none;border:1px solid var(--bd);color:var(--mu);font-family:Space Mono,monospace;font-size:8px;letter-spacing:1px;padding:6px 10px;border-radius:3px;cursor:pointer;">EXPORT</button>
+      <span id="syncDot" style="font-size:8px;letter-spacing:1px;color:var(--mu);padding:6px 8px;">LOCAL</span>
+        <button onclick="openSettings()" style="background:none;border:1px solid var(--bd);color:var(--mu);font-family:Space Mono,monospace;font-size:8px;letter-spacing:1px;padding:6px 10px;border-radius:3px;cursor:pointer;">SETTINGS</button>
+        <button onclick="exportCSV()" style="background:none;border:1px solid var(--bd);color:var(--mu);font-family:Space Mono,monospace;font-size:8px;letter-spacing:1px;padding:6px 10px;border-radius:3px;cursor:pointer;">EXPORT</button>
     </div>
   </header>
   <nav>
@@ -347,6 +354,7 @@ textarea.tbox{background:var(--sf2);border:1px solid var(--bd);border-radius:3px
 <script>
 // ===== CONFIG =====
 var GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=";
+var GAS_URL = localStorage.getItem("fx_gas_url") || "";
 
 // ===== STATE =====
 var trades     = JSON.parse(localStorage.getItem("fx_trades")  || "[]");
@@ -386,6 +394,91 @@ function boot() {
   try { popLinker(); } catch(e) { console.error(e); }
   try { updHdr(); } catch(e) { console.error(e); }
   try { renderAnalytics(); } catch(e) { console.error(e); }
+  syncStatus();
+  if (GAS_URL) syncPull();
+}
+
+// ===== SYNC =====
+function syncStatus() {
+  var dot = document.getElementById("syncDot");
+  if (!dot) return;
+  if (!GAS_URL) { dot.textContent = "LOCAL"; dot.style.color = "#5a5a72"; }
+  else { dot.textContent = "SYNC ON"; dot.style.color = "#00d4ff"; }
+}
+
+function syncPull() {
+  if (!GAS_URL) return;
+  var dot = document.getElementById("syncDot");
+  if (dot) { dot.textContent = "SYNCING..."; dot.style.color = "#ff9f00"; }
+  // GET is the most reliable cross-origin call to Apps Script (no preflight)
+  fetch(GAS_URL + "?action=getAll&t=" + Date.now())
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.ok) {
+        if (d.trades)  { trades = d.trades; }
+        if (d.entries) { entries = d.entries; }
+        sv(); // cache to localStorage
+        popLinker(); updHdr();
+        var active = document.querySelector(".ntab.active");
+        if (active) {
+          if (active.textContent.indexOf("TRADES") > -1) renderTrades();
+          if (active.textContent.indexOf("LOG") > -1) renderLog();
+          if (active.textContent.indexOf("ANALYTICS") > -1) renderAnalytics();
+        }
+        renderAnalytics();
+        if (dot) { dot.textContent = "SYNCED"; dot.style.color = "#c8ff00"; }
+        setTimeout(syncStatus, 2000);
+      } else {
+        if (dot) { dot.textContent = "SYNC ERR"; dot.style.color = "#ff4060"; }
+      }
+    })
+    .catch(function(e) {
+      // Offline or unreachable - keep using local data, never break
+      if (dot) { dot.textContent = "OFFLINE"; dot.style.color = "#ff9f00"; }
+      setTimeout(syncStatus, 2500);
+    });
+}
+
+function syncPush(entry, trade, newTrade, screenshots) {
+  if (!GAS_URL) return;
+  var dot = document.getElementById("syncDot");
+  if (dot) { dot.textContent = "SAVING..."; dot.style.color = "#ff9f00"; }
+  // POST with a plain string body = "simple request", no CORS preflight.
+  // Optimistic: local is already saved; we don't depend on the response.
+  fetch(GAS_URL, {
+    method: "POST",
+    body: JSON.stringify({ action: "saveEntry", data: { entry: entry, trade: trade, newTrade: newTrade, screenshots: screenshots || [] } })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d && d.ok) {
+      if (d.screenshotUrls && d.screenshotUrls.length) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].id === entry.id) { entries[i].screenshotUrls = d.screenshotUrls; sv(); break; }
+        }
+      }
+      if (dot) { dot.textContent = "SYNCED"; dot.style.color = "#c8ff00"; }
+    } else {
+      if (dot) { dot.textContent = "SAVE ERR"; dot.style.color = "#ff4060"; }
+    }
+    setTimeout(syncStatus, 2000);
+  })
+  .catch(function(e) {
+    // Saved locally already; will reconcile on next pull
+    if (dot) { dot.textContent = "LOCAL ONLY"; dot.style.color = "#ff9f00"; }
+    setTimeout(syncStatus, 2500);
+  });
+}
+
+function openSettings() {
+  var cur = GAS_URL || "";
+  var url = prompt("Sync URL (Apps Script deployment, ends in /exec).\nLeave blank to turn off sync and use this device only:", cur);
+  if (url === null) return; // cancelled
+  GAS_URL = url.trim();
+  localStorage.setItem("fx_gas_url", GAS_URL);
+  syncStatus();
+  if (GAS_URL) { toast("Sync on - pulling latest"); syncPull(); }
+  else { toast("Sync off - local only"); }
 }
 
 
@@ -440,6 +533,11 @@ function saveKey() {
   if (!key) { err.textContent = "Please enter your Gemini API key"; err.style.display = "block"; return; }
   err.style.display = "none";
   localStorage.setItem("fx_gemini_key", key);
+  var syncEl = document.getElementById("syncInput");
+  if (syncEl) {
+    GAS_URL = syncEl.value.trim();
+    localStorage.setItem("fx_gas_url", GAS_URL);
+  }
   document.getElementById("setup").style.display = "none";
   document.getElementById("mainApp").style.display = "block";
   boot();
@@ -745,12 +843,21 @@ function doSubmit() {
     entries[0].linkedTradeId = nt.id;
   }
 
-  sv(); popLinker(); updHdr(); renderAnalytics();
+  sv();
+  // Determine what trade objects changed for the cloud push
+  var pushTrade = null, pushNew = null;
+  if (lid) { for (var ti = 0; ti < trades.length; ti++) { if (trades[ti].id === lid) pushTrade = trades[ti]; } }
+  else if (curType === "PLAN" || curType === "ENTRY") { pushNew = trades[0]; }
+  var ssData = [];
+  for (var sd = 0; sd < shots.length; sd++) ssData.push(shots[sd].dataUrl);
+
+  popLinker(); updHdr(); renderAnalytics();
   document.getElementById("tbox").value = "";
   shots = []; lastParsed = null; liveText = "";
   document.getElementById("sprev").innerHTML = "";
   document.getElementById("excard").classList.remove("show");
   toast(curType === "FINAL_EXIT" ? "Trade closed" : (curType === "PARTIAL_EXIT" ? "Partial exit logged" : "Entry saved"));
+  syncPush(entry, pushTrade, pushNew, ssData);
 }
 
 function calcVWAP(tr) {
@@ -874,7 +981,8 @@ function renderLog() {
     if (e.riskReward) det += "<div><span class='ed-l'>R/R</span><span class='ed-v'>" + e.riskReward + "</span></div>";
     if (e.rAchieved) det += "<div><span class='ed-l'>R ACHIEVED</span><span class='ed-v'>" + e.rAchieved + "R</span></div>";
     if (e.setup) det += "<div><span class='ed-l'>SETUP</span><span class='ed-v'>" + e.setup + "</span></div>";
-    var ss = (e.screenshots && e.screenshots.length) ? "<div style='font-size:8px;color:#00d4ff;margin-top:6px'>&#128248; " + e.screenshots.length + " screenshot" + (e.screenshots.length>1?"s":"") + "</div>" : "";
+    var scc = (e.screenshotUrls && e.screenshotUrls.length) ? e.screenshotUrls.length : ((e.screenshots && e.screenshots.length) ? e.screenshots.length : 0);
+    var ss = scc ? "<div style='font-size:8px;color:#00d4ff;margin-top:6px'>&#128248; " + scc + " screenshot" + (scc>1?"s":"") + "</div>" : "";
     var body = (e.transcript||"").substring(0,200) + ((e.transcript||"").length>200?"...":"");
     html += "<div class='lentry " + ec + "' onclick='openMod(" + e.id + ")'><div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px'><div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><div class='epair'>" + (e.pair||"--") + "</div><span class='badge " + (bm[e.type]||"b-plan") + "'>" + e.type.replace("_"," ") + "</span>" + dir + out + "</div><div style='font-size:8px;color:#5a5a72;letter-spacing:1px'>" + dt + "</div></div><div class='ebody'>" + body + "</div>" + peH + "<div class='edet'>" + det + "</div>" + ss + "</div>";
   }
@@ -900,7 +1008,7 @@ function openMod(id) {
   document.getElementById("mex").innerHTML = html;
   document.getElementById("mtr").textContent = e.transcript || e.notes || "--";
   var ssH = "";
-  var sc = e.screenshots || [];
+  var sc = (e.screenshotUrls && e.screenshotUrls.length) ? e.screenshotUrls : (e.screenshots || []);
   for (var s=0;s<sc.length && s<3;s++){ ssH += "<img src='" + sc[s] + "' class='mss-img' alt='chart'>"; }
   document.getElementById("mss").innerHTML = ssH;
   document.getElementById("movl").classList.add("open");
